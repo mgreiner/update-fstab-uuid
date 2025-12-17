@@ -6,9 +6,24 @@
 
 set -euo pipefail
 
-VOLUME_NAME="${1:-}"
+# Determine Homebrew prefix for config file location
+if [[ -d "/opt/homebrew" ]]; then
+    BREW_PREFIX="/opt/homebrew"
+elif [[ -d "/usr/local" ]]; then
+    BREW_PREFIX="/usr/local"
+else
+    BREW_PREFIX="/usr/local"
+fi
+
+CONFIG_FILE="${BREW_PREFIX}/etc/update-fstab-uuid.conf"
 FSTAB_FILE="/etc/fstab"
 FSTAB_BACKUP="/etc/fstab.bak"
+
+# Get volume name from command-line argument or config file
+VOLUME_NAME="${1:-}"
+if [[ -z "$VOLUME_NAME" ]] && [[ -f "$CONFIG_FILE" ]]; then
+    VOLUME_NAME=$(cat "$CONFIG_FILE" | grep -v '^#' | grep -v '^[[:space:]]*$' | head -n 1)
+fi
 
 # Color output
 RED='\033[0;31m'
@@ -36,8 +51,12 @@ fi
 
 # Check if volume name was provided
 if [[ -z "$VOLUME_NAME" ]]; then
+    log_error "No volume name specified"
     log_error "Usage: $0 \"Volume Name\""
     log_error "Example: $0 \"Macintosh HD\""
+    log_error ""
+    log_error "Alternatively, create config file: $CONFIG_FILE"
+    log_error "with the volume name on the first line"
     exit 1
 fi
 

@@ -1,7 +1,7 @@
 class UpdateFstabUuid < Formula
   desc "Keep macOS fstab UUID entries current across system updates"
-  homepage "https://github.com/yourusername/update-fstab-uuid"
-  url "file://#{Dir.pwd}" # For local development; update with actual URL when published
+  homepage "https://github.com/mgreiner/update-fstab-uuid"
+  url "https://github.com/mgreiner/update-fstab-uuid/archive/refs/heads/main.tar.gz"
   version "1.0.0"
 
   def install
@@ -12,42 +12,74 @@ class UpdateFstabUuid < Formula
     (share/"update-fstab-uuid").install "com.mikegreiner.update-fstab-uuid.plist"
   end
 
+  def post_install
+    # Prompt for volume name and save to config file
+    config_file = etc/"update-fstab-uuid.conf"
+
+    unless config_file.exist?
+      print "\n"
+      print "Enter the name of the volume to prevent from auto-mounting\n"
+      print "(e.g., 'Macintosh HD', 'Work HD', etc.): "
+      volume_name = $stdin.gets&.chomp
+
+      if volume_name && !volume_name.empty?
+        config_file.write("# Volume name for update-fstab-uuid\n#{volume_name}\n")
+        ohai "Configuration saved to #{config_file}"
+        ohai "To start the service, run: brew services start update-fstab-uuid"
+      else
+        opoo "No volume name provided. You can configure it later by editing #{config_file}"
+      end
+    end
+  end
+
+  service do
+    run [opt_bin/"update-fstab-uuid.sh"]
+    run_type :immediate
+    require_root true
+    log_path "/var/log/update-fstab-uuid.log"
+    error_log_path "/var/log/update-fstab-uuid.error.log"
+  end
+
   def caveats
-    <<~EOS
-      To complete installation, you need to:
+    config_file = etc/"update-fstab-uuid.conf"
+    volume_name = config_file.exist? ? config_file.read.lines.grep_v(/^#/).first&.chomp : nil
 
-      1. Customize the LaunchDaemon plist with the volume name you want to prevent from auto-mounting:
+    s = <<~EOS
+      Configuration saved to: #{config_file}
+    EOS
 
-         sudo sed 's/VOLUME_NAME_PLACEHOLDER/Macintosh HD/g' \\
-           #{share}/update-fstab-uuid/com.mikegreiner.update-fstab-uuid.plist > \\
-           /tmp/com.mikegreiner.update-fstab-uuid.plist
+    if volume_name && !volume_name.empty?
+      s += <<~EOS
+        Volume configured: #{volume_name}
 
-         (Replace "Macintosh HD" with your target volume name)
+        To start the service and enable it at boot:
+          brew services start update-fstab-uuid
 
-      2. Install the plist to LaunchDaemons:
+        This will prompt for your password to install and load the LaunchDaemon.
+      EOS
+    else
+      s += <<~EOS
+        No volume configured yet. Edit #{config_file} and add the volume name.
 
-         sudo cp /tmp/com.mikegreiner.update-fstab-uuid.plist \\
-           /Library/LaunchDaemons/com.mikegreiner.update-fstab-uuid.plist
+        Then start the service:
+          brew services start update-fstab-uuid
+      EOS
+    end
 
-         sudo chmod 644 /Library/LaunchDaemons/com.mikegreiner.update-fstab-uuid.plist
-
-      3. Load the LaunchDaemon:
-
-         sudo launchctl load /Library/LaunchDaemons/com.mikegreiner.update-fstab-uuid.plist
-
-      The script will now run automatically at boot to keep your fstab entries current.
+    s += <<~EOS
 
       To run manually:
-         sudo #{bin}/update-fstab-uuid.sh "Volume Name"
+        sudo #{opt_bin}/update-fstab-uuid.sh "Volume Name"
 
-      Logs are written to:
-         /var/log/update-fstab-uuid.log
-         /var/log/update-fstab-uuid.error.log
+      Logs:
+        /var/log/update-fstab-uuid.log
+        /var/log/update-fstab-uuid.error.log
 
-      To uninstall the LaunchDaemon:
-         sudo launchctl unload /Library/LaunchDaemons/com.mikegreiner.update-fstab-uuid.plist
-         sudo rm /Library/LaunchDaemons/com.mikegreiner.update-fstab-uuid.plist
+      To stop the service:
+        brew services stop update-fstab-uuid
     EOS
+
+    s
   end
 
   test do
